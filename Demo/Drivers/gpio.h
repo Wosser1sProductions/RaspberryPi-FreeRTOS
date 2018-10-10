@@ -67,8 +67,10 @@
 #ifndef _GPIO_H_
 #define _GPIO_H_
 
+#include <stdint.h>
+
 /* GPIO event detect types */
-enum DETECT_TYPE {
+typedef enum DETECT_TYPE {
 	DETECT_NONE,
 	DETECT_RISING,
 	DETECT_FALLING,
@@ -76,39 +78,39 @@ enum DETECT_TYPE {
 	DETECT_LOW,
 	DETECT_RISING_ASYNC,
 	DETECT_FALLING_ASYNC
-};
+} GpioDetect_t;
 
 /* GPIO pull up or down states */
-enum PULL_STATE {
+typedef enum PULL_STATE {
 	PULL_DISABLE,
 	PULL_UP,
 	PULL_DOWN,
 	PULL_RESERVED
-};
+} GpioPull_t;
 
 /* Pin data direction */
-enum GPIO_DIR {
+typedef enum GPIO_DIR {
 	GPIO_IN,
 	GPIO_OUT
-};
+} GpioDir_t;
 
 /* GPIO pin setup */
-void SetGpioFunction	(unsigned int pinNum, unsigned int funcNum);
+void SetGpioFunction	(uint32_t pinNum, uint32_t funcNum);
 /* A simple wrapper around SetGpioFunction */
-void SetGpioDirection	(unsigned int pinNum, enum GPIO_DIR dir);
+void SetGpioDirection	(uint32_t pinNum, GpioDir_t dir);
 
 /* Set GPIO output level */
-void SetGpio			(unsigned int pinNum, unsigned int pinVal);
+void SetGpio			(uint32_t pinNum, uint32_t pinVal);
 
 /* Read GPIO pin level */
-int ReadGpio			(unsigned int pinNum);
+int ReadGpio			(uint32_t pinNum);
 
 /* GPIO pull up/down resistor control function (NOT YET IMPLEMENTED) */
-int PudGpio				(unsigned int pinNum, enum PULL_STATE state);
+int PudGpio				(uint32_t pinNum, GpioPull_t state);
 
 /* Interrupt related functions */
-void EnableGpioDetect	(unsigned int pinNum, enum DETECT_TYPE type);
-void DisableGpioDetect	(unsigned int pinNum, enum DETECT_TYPE type);
-void ClearGpioInterrupt	(unsigned int pinNum);
+void EnableGpioDetect	(uint32_t pinNum, GpioDetect_t type);
+void DisableGpioDetect	(uint32_t pinNum, GpioDetect_t type);
+void ClearGpioInterrupt	(uint32_t pinNum);
 
 #endif

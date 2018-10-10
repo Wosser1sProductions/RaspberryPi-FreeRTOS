@@ -64,34 +64,32 @@
     the SafeRTOS brand: http://www.SafeRTOS.com.
 */
 
-
 #include <FreeRTOS.h>
 #include <task.h>
 
 #include "Drivers/irq.h"
 #include "Drivers/gpio.h"
+#include "Drivers/uart.h"
 
-void task1(void *pParam) {
+void task_LED_toggle(void *pParam) {
+    (void*)pParam;
 
-	int i = 0;
 	while(1) {
-		i++;
-		SetGpio(16, 1);
+		SetGpio(11, 1);
 		vTaskDelay(200);
+        SetGpio(11, 0);
+        vTaskDelay(200);
 	}
 }
 
-void task2(void *pParam) {
+void task_PrintProgress(void *pParam) {
+    (void*)pParam;
 
-	int i = 0;
 	while(1) {
-		i++;
-		vTaskDelay(100);
-		SetGpio(16, 0);
-		vTaskDelay(100);
+		uartPutC('.');
+        vTaskDelay(200);
 	}
 }
-
 
 /**
  *	This is the systems main entry, some call it a boot thread.
@@ -99,12 +97,16 @@ void task2(void *pParam) {
  *	-- Absolutely nothing wrong with this being called main(), just it doesn't have
  *	-- the same prototype as you'd see in a linux program.
  **/
-void main (void)
-{
-	SetGpioFunction(16, 1);			// RDY led
+int  main (void) {
+    uartPutS("Booting...\n");
+    
+	SetGpioFunction(11, 1);			// RDY led
 
-	xTaskCreate(task1, "LED_0", 128, NULL, 0, NULL);
-	xTaskCreate(task2, "LED_1", 128, NULL, 0, NULL);
+	xTaskCreate(task_LED_toggle   , "tskLED_Toggle", 128, NULL, 0, NULL);
+	xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
+    
+    uartPutS("Created tasks.\n");
+    uartPutS("Starting scheduler...\n");
 
 	vTaskStartScheduler();
 
@@ -112,7 +114,7 @@ void main (void)
 	 *	We should never get here, but just in case something goes wrong,
 	 *	we'll place the CPU into a safe loop.
 	 */
-	while(1) {
-		;
-	}
+	while(1);
+    
+    return 0;
 }

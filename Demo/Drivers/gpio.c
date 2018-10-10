@@ -102,99 +102,95 @@ typedef struct {
 volatile BCM2835_GPIO_REGS * const pRegs = (BCM2835_GPIO_REGS *) (0x20200000);
 
 
-void SetGpioFunction(unsigned int pinNum, unsigned int funcNum) {
+void SetGpioFunction(uint32_t pinNum, uint32_t funcNum) {
+	const uint32_t offset = pinNum / 10;
+	const uint32_t item   = pinNum % 10;
 
-	int offset = pinNum / 10;
+	uint32_t val = pRegs->GPFSEL[offset];	// Read in the original register value.
 
-	unsigned long val = pRegs->GPFSEL[offset];	// Read in the original register value.
-
-	int item = pinNum % 10;
 	val &= ~(0x7 << (item * 3));
 	val |= ((funcNum & 0x7) << (item * 3));
 	pRegs->GPFSEL[offset] = val;
 }
 
-void SetGpioDirection(unsigned int pinNum, enum GPIO_DIR dir) {
-	SetGpioFunction(pinNum,dir);
+void SetGpioDirection(uint32_t pinNum, GpioDir_t dir) {
+	SetGpioFunction(pinNum, dir);
 }
 
-void SetGpio(unsigned int pinNum, unsigned int pinVal) {
-	unsigned long offset=pinNum/32;
-	unsigned long mask=(1<<(pinNum%32));
+void SetGpio(uint32_t pinNum, uint32_t pinVal) {
+	const uint32_t offset = pinNum / 32;
+	const uint32_t mask   = (1 << (pinNum % 32));
 
 	if(pinVal) {
-		pRegs->GPSET[offset]|=mask;
+		pRegs->GPSET[offset] |= mask;
 	} else {
-		pRegs->GPCLR[offset]|=mask;
+		pRegs->GPCLR[offset] |= mask;
 	}
 }
 
-int ReadGpio(unsigned int pinNum) {
-	return ((pRegs->GPLEV[pinNum/32])>>(pinNum%32))&1;
+int ReadGpio(uint32_t pinNum) {
+	return ((pRegs->GPLEV[pinNum / 32]) >> (pinNum % 32)) & 1;
 }
 
-void EnableGpioDetect(unsigned int pinNum, enum DETECT_TYPE type)
-{
-	unsigned long mask=(1<<pinNum);
-	unsigned long offset=pinNum/32;
+void EnableGpioDetect(uint32_t pinNum, GpioDetect_t type) {
+	const uint32_t mask=(1<<pinNum);
+	const uint32_t offset=pinNum/32;
 	
 	switch(type) {
-	case DETECT_RISING:
-		pRegs->GPREN[offset]|=mask;
-		break;
-	case DETECT_FALLING:
-		pRegs->GPFEN[offset]|=mask;
-		break;
-	case DETECT_HIGH:
-		pRegs->GPHEN[offset]|=mask;
-		break;
-	case DETECT_LOW:
-		pRegs->GPLEN[offset]|=mask;
-		break;
-	case DETECT_RISING_ASYNC:
-		pRegs->GPAREN[offset]|=mask;
-		break;
-	case DETECT_FALLING_ASYNC:
-		pRegs->GPAFEN[offset]|=mask;
-		break;
-	case DETECT_NONE:
-		break;
+		case DETECT_RISING:
+			pRegs->GPREN[offset]|=mask;
+			break;
+		case DETECT_FALLING:
+			pRegs->GPFEN[offset]|=mask;
+			break;
+		case DETECT_HIGH:
+			pRegs->GPHEN[offset]|=mask;
+			break;
+		case DETECT_LOW:
+			pRegs->GPLEN[offset]|=mask;
+			break;
+		case DETECT_RISING_ASYNC:
+			pRegs->GPAREN[offset]|=mask;
+			break;
+		case DETECT_FALLING_ASYNC:
+			pRegs->GPAFEN[offset]|=mask;
+			break;
+		case DETECT_NONE:
+			break;
 	}
 }
 
-void DisableGpioDetect(unsigned int pinNum, enum DETECT_TYPE type)
-{
-	unsigned long mask=~(1<<(pinNum%32));
-	unsigned long offset=pinNum/32;
+void DisableGpioDetect(uint32_t pinNum, GpioDetect_t type) {
+	const uint32_t mask   = ~(1 << (pinNum % 32));
+	const uint32_t offset = pinNum / 32;
 	
 	switch(type) {
-	case DETECT_RISING:
-		pRegs->GPREN[offset]&=mask;
-		break;
-	case DETECT_FALLING:
-		pRegs->GPFEN[offset]&=mask;
-		break;
-	case DETECT_HIGH:
-		pRegs->GPHEN[offset]&=mask;
-		break;
-	case DETECT_LOW:
-		pRegs->GPLEN[offset]&=mask;
-		break;
-	case DETECT_RISING_ASYNC:
-		pRegs->GPAREN[offset]&=mask;
-		break;
-	case DETECT_FALLING_ASYNC:
-		pRegs->GPAFEN[offset]&=mask;
-		break;
-	case DETECT_NONE:
-		break;
+		case DETECT_RISING:
+			pRegs->GPREN[offset]&=mask;
+			break;
+		case DETECT_FALLING:
+			pRegs->GPFEN[offset]&=mask;
+			break;
+		case DETECT_HIGH:
+			pRegs->GPHEN[offset]&=mask;
+			break;
+		case DETECT_LOW:
+			pRegs->GPLEN[offset]&=mask;
+			break;
+		case DETECT_RISING_ASYNC:
+			pRegs->GPAREN[offset]&=mask;
+			break;
+		case DETECT_FALLING_ASYNC:
+			pRegs->GPAFEN[offset]&=mask;
+			break;
+		case DETECT_NONE:
+			break;
 	}
 }
 
-void ClearGpioInterrupt(unsigned int pinNum)
-{
-	unsigned long mask=(1<<(pinNum%32));
-	unsigned long offset=pinNum/32;
+void ClearGpioInterrupt(uint32_t pinNum) {
+	const uint32_t mask   = (1 << (pinNum % 32));
+	const uint32_t offset = pinNum / 32;
 
-	pRegs->GPEDS[offset]=mask;
+	pRegs->GPEDS[offset] = mask;
 }

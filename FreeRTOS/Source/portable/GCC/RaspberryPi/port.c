@@ -220,6 +220,9 @@ void vPortEndScheduler( void )
  */
 void vTickISR (unsigned int nIRQ, void *pParam)
 {
+    (void)nIRQ;
+    (void*)pParam;
+
 	vTaskIncrementTick();
 
 	#if configUSE_PREEMPTION == 1
@@ -247,6 +250,8 @@ static void prvSetupTimerInterrupt( void )
 		ulCompareMatch /= ( portPRESCALE_VALUE + 1 );
 	}
 	#endif
+    
+    (void)ulCompareMatch;
 
 	irqBlock();
 
