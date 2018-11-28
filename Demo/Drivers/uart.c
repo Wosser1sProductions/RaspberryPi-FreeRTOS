@@ -1,5 +1,11 @@
 #include "uart.h"
 
+#define TXFE 0x80
+#define RXFF 0x40
+#define TXFF 0x20
+#define RXFE 0x10
+#define BUSY 0x08
+
 static inline void mmio_write(uint32_t reg, uint32_t data) {
 	*(volatile uint32_t *)reg = data;
 }
@@ -44,9 +50,13 @@ enum {
     UART0_TDR    = (UART0_BASE + 0x8C),
 };
 
+void uartEnableInterrupt(void) {
+
+}
+
 void uartPutC(unsigned char byte) {
 	// Wait for UART to become ready to transmit.
-	while (mmio_read(UART0_FR) & (1 << 5)) {}
+	while (mmio_read(UART0_FR) & TXFF);
 	mmio_write(UART0_DR, byte);
 }
 
@@ -61,3 +71,53 @@ void uartPutI(const uint32_t i){
         uartPutI(i/10);
     uartPutC('0' + (i%10));	  
 }
+
+void uartPutF(float f) {
+	if (f < 0.0f) {
+		f = -f;
+		uartPutC('-');
+	}
+
+	const uint32_t integer_part = f;
+
+	uartPutI(integer_part);
+	uartPutC('.');
+	uartPutI((uint32_t)((f - integer_part) * 100.0));
+}
+
+char uartGetC(void) {
+	while (mmio_read(UART0_FR) & RXFE);
+	return mmio_read(UART0_DR);
+}
+
+void uartGetS(char *s) {
+	while ((*s = uartGetC()) != '\r') {
+		uartPutC(*s);
+		s++;
+	}
+
+	*s = '\0';
+}
+
+int uartGetI(void) {
+	char c;
+	int val = 0;
+
+	while ((c = uartGetC()) != '\r') {
+		uartPutC(c);
+		val *= 10;
+		val += (c - '0');
+	}
+
+	return val;
+}
+
+void clearLine(int len) {
+	int i;
+	uartPutC('\r');
+
+	for (i = 0; i < len; i++) {
+		uartPutC(' ');
+	}
+}
+

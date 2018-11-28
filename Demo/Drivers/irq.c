@@ -70,12 +70,12 @@ void irqHandler (void)
 
 void irqUnblock (void)
 {
-	asm volatile ("cpsie i" ::: "memory");
+	__asm volatile ("cpsie i" ::: "memory");
 }
 
 void irqBlock (void)
 {
-	asm volatile ("cpsid i" ::: "memory");
+	__asm volatile ("cpsid i" ::: "memory");
 }
 
 void irqRegister (const unsigned int irq, FN_INTERRUPT_HANDLER pfnHandler, void *pParam)

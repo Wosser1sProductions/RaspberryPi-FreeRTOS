@@ -7,6 +7,7 @@
 
 #ifndef _INTERRUPTS_H_
 #define _INTERRUPTS_H_
+#include "bcm2835_intc.h"
 
 typedef void (*FN_INTERRUPT_HANDLER) (unsigned int irq, void *pParam);
 

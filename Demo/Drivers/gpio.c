@@ -70,6 +70,7 @@
  **/
 
 #include "gpio.h"
+#include "../utils.h"
 
 typedef struct {
 	unsigned long	GPFSEL[6];	///< Function selection registers.
@@ -132,28 +133,45 @@ int ReadGpio(uint32_t pinNum) {
 	return ((pRegs->GPLEV[pinNum / 32]) >> (pinNum % 32)) & 1;
 }
 
+void PutGpio(uint32_t pinNum, GpioPull_t state) {
+	const uint32_t offset = pinNum / 32;
+	const uint32_t mask   = (1 << (pinNum % 32));
+	volatile int i;
+
+	pRegs->GPPUD[0]          = state;
+
+	for (i = 150; i--;) ASMNOP();
+
+	pRegs->GPPUDCLK[offset] |= mask;
+
+	for (i = 150; i--;) ASMNOP();
+
+	pRegs->GPPUD[0]          = PULL_DISABLE;
+	pRegs->GPPUDCLK[offset] &= ~mask;
+}
+
 void EnableGpioDetect(uint32_t pinNum, GpioDetect_t type) {
-	const uint32_t mask=(1<<pinNum);
-	const uint32_t offset=pinNum/32;
+	const uint32_t mask   = (1 << pinNum);
+	const uint32_t offset = pinNum / 32;
 	
 	switch(type) {
 		case DETECT_RISING:
-			pRegs->GPREN[offset]|=mask;
+			pRegs->GPREN[offset]  |= mask;
 			break;
 		case DETECT_FALLING:
-			pRegs->GPFEN[offset]|=mask;
+			pRegs->GPFEN[offset]  |= mask;
 			break;
 		case DETECT_HIGH:
-			pRegs->GPHEN[offset]|=mask;
+			pRegs->GPHEN[offset]  |= mask;
 			break;
 		case DETECT_LOW:
-			pRegs->GPLEN[offset]|=mask;
+			pRegs->GPLEN[offset]  |= mask;
 			break;
 		case DETECT_RISING_ASYNC:
-			pRegs->GPAREN[offset]|=mask;
+			pRegs->GPAREN[offset] |= mask;
 			break;
 		case DETECT_FALLING_ASYNC:
-			pRegs->GPAFEN[offset]|=mask;
+			pRegs->GPAFEN[offset] |= mask;
 			break;
 		case DETECT_NONE:
 			break;
@@ -166,31 +184,40 @@ void DisableGpioDetect(uint32_t pinNum, GpioDetect_t type) {
 	
 	switch(type) {
 		case DETECT_RISING:
-			pRegs->GPREN[offset]&=mask;
+			pRegs->GPREN[offset]  &= mask;
 			break;
 		case DETECT_FALLING:
-			pRegs->GPFEN[offset]&=mask;
+			pRegs->GPFEN[offset]  &= mask;
 			break;
 		case DETECT_HIGH:
-			pRegs->GPHEN[offset]&=mask;
+			pRegs->GPHEN[offset]  &= mask;
 			break;
 		case DETECT_LOW:
-			pRegs->GPLEN[offset]&=mask;
+			pRegs->GPLEN[offset]  &= mask;
 			break;
 		case DETECT_RISING_ASYNC:
-			pRegs->GPAREN[offset]&=mask;
+			pRegs->GPAREN[offset] &= mask;
 			break;
 		case DETECT_FALLING_ASYNC:
-			pRegs->GPAFEN[offset]&=mask;
+			pRegs->GPAFEN[offset] &= mask;
 			break;
 		case DETECT_NONE:
 			break;
 	}
 }
 
-void ClearGpioInterrupt(uint32_t pinNum) {
+void ClearGpioDetect(uint32_t pinNum) {
+	pRegs->GPEDS[pinNum / 32] = (1 << (pinNum % 32));
+}
+
+int GpioDetectEdge(uint32_t pinNum) {
 	const uint32_t mask   = (1 << (pinNum % 32));
 	const uint32_t offset = pinNum / 32;
 
-	pRegs->GPEDS[offset] = mask;
+	if (pRegs->GPEDS[offset] & mask) {
+		ClearGpioDetect(pinNum);
+		return 1;
+	}
+
+	return 0;
 }

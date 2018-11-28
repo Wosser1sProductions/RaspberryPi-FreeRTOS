@@ -83,8 +83,8 @@ typedef enum DETECT_TYPE {
 /* GPIO pull up or down states */
 typedef enum PULL_STATE {
 	PULL_DISABLE,
-	PULL_UP,
 	PULL_DOWN,
+	PULL_UP,
 	PULL_RESERVED
 } GpioPull_t;
 
@@ -105,12 +105,13 @@ void SetGpio			(uint32_t pinNum, uint32_t pinVal);
 /* Read GPIO pin level */
 int ReadGpio			(uint32_t pinNum);
 
-/* GPIO pull up/down resistor control function (NOT YET IMPLEMENTED) */
-int PudGpio				(uint32_t pinNum, GpioPull_t state);
+/* GPIO pull up/down resistor control function */
+void PutGpio	     	(uint32_t pinNum, GpioPull_t state);
 
 /* Interrupt related functions */
 void EnableGpioDetect	(uint32_t pinNum, GpioDetect_t type);
 void DisableGpioDetect	(uint32_t pinNum, GpioDetect_t type);
-void ClearGpioInterrupt	(uint32_t pinNum);
+void ClearGpioDetect    (uint32_t pinNum);
+int  GpioDetectEdge     (uint32_t pinNum);
 
 #endif

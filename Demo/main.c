@@ -71,25 +71,59 @@
 #include "Drivers/gpio.h"
 #include "Drivers/uart.h"
 
-void task_LED_toggle(void *pParam) {
-    (void*)pParam;
+//#define EXAMPLEGAME
+#define SENSORPROJECT
 
-	while(1) {
-		SetGpio(11, 1);
-		vTaskDelay(200);
-        SetGpio(11, 0);
-        vTaskDelay(200);
+#ifdef EXAMPLEGAME
+	#include "ExampleButtonGame.h"
+#elif defined(SENSORPROJECT)
+	#include "Sensorproject.h"
+#else
+	#define LED 21
+
+	void task_LED_toggle(void *pParam) {
+		(void*)pParam;
+
+		while(1) {
+			SetGpio(LED, 1);
+			vTaskDelay(200);
+			SetGpio(LED, 0);
+			vTaskDelay(200);
+		}
 	}
-}
 
-void task_PrintProgress(void *pParam) {
-    (void*)pParam;
+	void task_PrintProgress(void *pParam) {
+		(void*)pParam;
 
-	while(1) {
-		uartPutC('.');
-        vTaskDelay(200);
+		int again  = 0;
+		int dots   = 0;
+		static char buff[100];
+
+		do {
+			uartPutS(NEWLINE "Message: ");
+			uartGetS(buff);
+			uartPutS(NEWLINE);
+			uartPutS("Times: ");
+			dots = uartGetI();
+			uartPutS(NEWLINE);
+			uartPutS(buff);
+			uartPutS(NEWLINE);
+			uartPutI(dots);
+			uartPutS(" times." NEWLINE);
+
+			while(dots--) {
+				uartPutC('.');
+//				uartPutI(dots++);
+				uartPutS(NEWLINE);
+				vTaskDelay(200);
+			}
+
+			uartPutS("Again? (0/1) ");
+		} while (uartGetI());
+
+		vTaskDelete(NULL);
 	}
-}
+#endif
 
 /**
  *	This is the systems main entry, some call it a boot thread.
@@ -98,15 +132,32 @@ void task_PrintProgress(void *pParam) {
  *	-- the same prototype as you'd see in a linux program.
  **/
 int  main (void) {
-    uartPutS("Booting...\n");
-    
-	SetGpioFunction(11, 1);			// RDY led
+	uartEnableInterrupt();
 
-	xTaskCreate(task_LED_toggle   , "tskLED_Toggle", 128, NULL, 0, NULL);
-	xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
+	uartCmd(CONSOLE_RESET);
+	uartCmd(CONSOLE_CLS);
+	uartCmd(CONSOLE_CURSOR);
+	uartCmd(CONSOLE_RESET);
+	uartCmd(CONSOLE_FG_BRIGHT_CYAN);
+    uartPutS("Booting..." NEWLINE);
     
-    uartPutS("Created tasks.\n");
-    uartPutS("Starting scheduler...\n");
+	#if defined(EXAMPLEGAME)
+		BG_initHardware();
+		BG_startTasks();
+	#elif defined(SENSORPROJECT)
+		SP_initHardware();
+		SP_startTasks();
+	#else
+		SetGpioFunction(LED, GPIO_OUT);			// RDY led
+
+		xTaskCreate(task_LED_toggle   , "tskLED_Toggle", 128, NULL, 0, NULL);
+		xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
+	#endif
+
+    uartPutS("Created tasks." NEWLINE);
+    uartCmd(CONSOLE_FG_BRIGHT_BLUE);
+    uartPutS("Starting scheduler..." NEWLINE);
+	uartCmd(CONSOLE_RESET);
 
 	vTaskStartScheduler();
 

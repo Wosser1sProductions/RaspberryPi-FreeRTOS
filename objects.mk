@@ -18,6 +18,8 @@ OBJECTS += $(BUILD_DIR)FreeRTOS/Source/tasks.o
 OBJECTS += $(BUILD_DIR)Demo/Drivers/irq.o
 OBJECTS += $(BUILD_DIR)Demo/Drivers/gpio.o
 OBJECTS += $(BUILD_DIR)Demo/Drivers/uart.o
+OBJECTS += $(BUILD_DIR)Demo/Drivers/i2c.o
+OBJECTS += $(BUILD_DIR)Demo/Drivers/BMP180.o
 
 $(BUILD_DIR)FreeRTOS/Source/portable/GCC/RaspberryPi/port.o: CFLAGS += -I $(BASE)Demo/
 
@@ -36,3 +38,5 @@ OBJECTS += $(BUILD_DIR)Demo/startup.o
 #	Main Test Program
 #
 OBJECTS += $(BUILD_DIR)Demo/main.o
+OBJECTS += $(BUILD_DIR)Demo/ExampleButtonGame.o
+OBJECTS += $(BUILD_DIR)Demo/Sensorproject.o
