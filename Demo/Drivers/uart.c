@@ -1,10 +1,18 @@
 #include "uart.h"
+#include "bcm2835_intc.h"
+
+#include <FreeRTOS.h>
+
+#define UART_BUFFER_SIZE	128
 
 #define TXFE 0x80
 #define RXFF 0x40
 #define TXFF 0x20
 #define RXFE 0x10
 #define BUSY 0x08
+
+static volatile xQueueHandle UART_RecvQueue = NULL;
+static volatile xQueueHandle UART_SendQueue = NULL;
 
 static inline void mmio_write(uint32_t reg, uint32_t data) {
 	*(volatile uint32_t *)reg = data;
@@ -50,14 +58,57 @@ enum {
     UART0_TDR    = (UART0_BASE + 0x8C),
 };
 
-void uartEnableInterrupt(void) {
+int uartEnableInterrupt() {
+	UART_RecvQueue = xQueueCreate(UART_BUFFER_SIZE, sizeof(char));
+	UART_SendQueue = xQueueCreate(UART_BUFFER_SIZE, sizeof(char));
 
+	irqRegister(BCM2835_IRQ_ID_UART, &uart_interrupt_handler, NULL);
+
+	return UART_RecvQueue != NULL && UART_SendQueue != NULL;
 }
 
-void uartPutC(unsigned char byte) {
-	// Wait for UART to become ready to transmit.
-	while (mmio_read(UART0_FR) & TXFF);
-	mmio_write(UART0_DR, byte);
+int uart_interrupt_handler(unsigned int irq, void *pParam) {
+	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+	if (irq == BCM2835_IRQ_ID_UART) {
+		const uint32_t irq_read = mmio_read(UART0_MIS);
+		if (irq_read & RXFE) {
+			const char irq_in = mmio_read(UART0_DR);
+
+			while(xQueueSendToBackFromISR(UART_RecvQueue, &irq_in, &xHigherPriorityTaskWoken) == 0)
+				taskYIELD();
+		} else if (irq_read & TXFF) {
+			char irq_out;
+
+			if (xQueueReceiveFromISR(UART_SendQueue, &irq_out, &xHigherPriorityTaskWoken) == 0) {
+				// Disable interrupt?
+				mmio_write(UART0_IMSC, mmio_read(UART0_IMSC) & ~RXFE);
+			} else {
+				mmio_write(UART0_DR, irq_out);
+			}
+		}
+
+		if(xHigherPriorityTaskWoken) {
+			taskYIELD();
+		}
+
+		return 0;
+	}
+
+	return 1;
+}
+
+void uartPutC(char byte) {
+	if (UART_SendQueue != NULL) {
+		while (xQueueSendToBack(UART_SendQueue, &byte, (portTickType) 10) == 0);
+
+		// Set interrupt?
+		mmio_write(UART0_IMSC, mmio_read(UART0_IMSC) | TXFF | RXFE);
+	} else {
+		// Wait for UART to become ready to transmit.
+		while (mmio_read(UART0_FR) & TXFF);
+		mmio_write(UART0_DR, byte);
+	}
 }
 
 void uartPutS(const char *s) {
@@ -86,8 +137,17 @@ void uartPutF(float f) {
 }
 
 char uartGetC(void) {
-	while (mmio_read(UART0_FR) & RXFE);
-	return mmio_read(UART0_DR);
+	char c;
+
+	if (UART_RecvQueue != NULL) {
+		// Get chars from interrupt queue
+		while (xQueueReceive(UART_RecvQueue, &c, (portTickType) 10) == 0);
+	} else {
+		while (mmio_read(UART0_FR) & RXFE);
+		c = mmio_read(UART0_DR);
+	}
+
+	return c;
 }
 
 void uartGetS(char *s) {

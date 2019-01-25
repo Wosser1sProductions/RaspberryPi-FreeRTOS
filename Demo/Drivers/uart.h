@@ -98,9 +98,11 @@ static const char* CONSOLE_LUT[] = {
 
 #define uartCmd(C) uartPutS(CONSOLE_LUT[(C)])
 
-void uartEnableInterrupt(void);
+int uartEnableInterrupt();
 
-void uartPutC(unsigned char byte);
+int uart_interrupt_handler(unsigned int irq, void *pParam);
+
+void uartPutC(char byte);
 void uartPutS(const char *s);
 void uartPutI(const uint32_t i);
 void uartPutF(float f);

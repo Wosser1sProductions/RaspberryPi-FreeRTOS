@@ -1,6 +1,6 @@
 /*
     FreeRTOS V7.2.0 - Copyright (C) 2012 Real Time Engineers Ltd.
-	
+
 
     ***************************************************************************
      *                                                                       *
@@ -75,97 +75,97 @@
 #define SENSORPROJECT
 
 #ifdef EXAMPLEGAME
-	#include "ExampleButtonGame.h"
+    #include "ExampleButtonGame.h"
 #elif defined(SENSORPROJECT)
-	#include "Sensorproject.h"
+    #include "Sensorproject.h"
 #else
-	#define LED 21
+    #define LED 21
 
-	void task_LED_toggle(void *pParam) {
-		(void*)pParam;
+    void task_LED_toggle(void *pParam) {
+        (void*)pParam;
 
-		while(1) {
-			SetGpio(LED, 1);
-			vTaskDelay(200);
-			SetGpio(LED, 0);
-			vTaskDelay(200);
-		}
-	}
+        while(1) {
+            SetGpio(LED, 1);
+            vTaskDelay(200);
+            SetGpio(LED, 0);
+            vTaskDelay(200);
+        }
+    }
 
-	void task_PrintProgress(void *pParam) {
-		(void*)pParam;
+    void task_PrintProgress(void *pParam) {
+        (void*)pParam;
 
-		int again  = 0;
-		int dots   = 0;
-		static char buff[100];
+        int again  = 0;
+        int dots   = 0;
+        static char buff[100];
 
-		do {
-			uartPutS(NEWLINE "Message: ");
-			uartGetS(buff);
-			uartPutS(NEWLINE);
-			uartPutS("Times: ");
-			dots = uartGetI();
-			uartPutS(NEWLINE);
-			uartPutS(buff);
-			uartPutS(NEWLINE);
-			uartPutI(dots);
-			uartPutS(" times." NEWLINE);
+        do {
+            uartPutS(NEWLINE "Message: ");
+            uartGetS(buff);
+            uartPutS(NEWLINE);
+            uartPutS("Times: ");
+            dots = uartGetI();
+            uartPutS(NEWLINE);
+            uartPutS(buff);
+            uartPutS(NEWLINE);
+            uartPutI(dots);
+            uartPutS(" times." NEWLINE);
 
-			while(dots--) {
-				uartPutC('.');
-//				uartPutI(dots++);
-				uartPutS(NEWLINE);
-				vTaskDelay(200);
-			}
+            while(dots--) {
+                uartPutC('.');
+//                uartPutI(dots++);
+                uartPutS(NEWLINE);
+                vTaskDelay(200);
+            }
 
-			uartPutS("Again? (0/1) ");
-		} while (uartGetI());
+            uartPutS("Again? (0/1) ");
+        } while (uartGetI());
 
-		vTaskDelete(NULL);
-	}
+        vTaskDelete(NULL);
+    }
 #endif
 
 /**
- *	This is the systems main entry, some call it a boot thread.
+ *    This is the systems main entry, some call it a boot thread.
  *
- *	-- Absolutely nothing wrong with this being called main(), just it doesn't have
- *	-- the same prototype as you'd see in a linux program.
+ *    -- Absolutely nothing wrong with this being called main(), just it doesn't have
+ *    -- the same prototype as you'd see in a linux program.
  **/
 int  main (void) {
-	uartEnableInterrupt();
+	// uartEnableInterrupt();
 
-	uartCmd(CONSOLE_RESET);
-	uartCmd(CONSOLE_CLS);
-	uartCmd(CONSOLE_CURSOR);
-	uartCmd(CONSOLE_RESET);
-	uartCmd(CONSOLE_FG_BRIGHT_CYAN);
+    uartCmd(CONSOLE_RESET);
+    uartCmd(CONSOLE_CLS);
+    uartCmd(CONSOLE_CURSOR);
+    uartCmd(CONSOLE_RESET);
+    uartCmd(CONSOLE_FG_BRIGHT_CYAN);
     uartPutS("Booting..." NEWLINE);
     
-	#if defined(EXAMPLEGAME)
-		BG_initHardware();
-		BG_startTasks();
-	#elif defined(SENSORPROJECT)
-		SP_initHardware();
-		SP_startTasks();
-	#else
-		SetGpioFunction(LED, GPIO_OUT);			// RDY led
+    #if defined(EXAMPLEGAME)
+        BG_initHardware();
+        BG_startTasks();
+    #elif defined(SENSORPROJECT)
+        SP_initHardware();
+        SP_startTasks();
+    #else
+        SetGpioFunction(LED, GPIO_OUT);            // RDY led
 
-		xTaskCreate(task_LED_toggle   , "tskLED_Toggle", 128, NULL, 0, NULL);
-		xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
-	#endif
+        xTaskCreate(task_LED_toggle   , "tskLED_Toggle", 128, NULL, 0, NULL);
+        xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
+    #endif
 
     uartPutS("Created tasks." NEWLINE);
     uartCmd(CONSOLE_FG_BRIGHT_BLUE);
     uartPutS("Starting scheduler..." NEWLINE);
-	uartCmd(CONSOLE_RESET);
+    uartCmd(CONSOLE_RESET);
 
-	vTaskStartScheduler();
+    vTaskStartScheduler();
 
-	/*
-	 *	We should never get here, but just in case something goes wrong,
-	 *	we'll place the CPU into a safe loop.
-	 */
-	while(1);
+    /*
+     *    We should never get here, but just in case something goes wrong,
+     *    we'll place the CPU into a safe loop.
+     */
+    while(1);
     
     return 0;
 }

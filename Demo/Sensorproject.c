@@ -19,7 +19,7 @@
 #define MAX(X,Y)	((X) > (Y) ? (X) : (Y))
 
 static struct {
-	I2C_t    *i2c;
+	I2C_t     i2c;
 	BMP180_t *bmp;
 
 	float measured_temp;
@@ -121,6 +121,8 @@ static void taskLED(void) {
 static void taskSensor(void) {
 	uartPutS("Start Sensor task." NEWLINE);
 
+    // Check https://github.com/fdellorso/RaspberryPi-FreeRTOS
+    
 //	if (Locals.bmp == NULL) {
 //		uartCmd(CONSOLE_FG_RED);
 //		uartPutS("ERROR Sensor not initialised!." NEWLINE);
@@ -159,6 +161,8 @@ static void taskMain(void) {
 }
 
 void SP_initHardware(void) {
+    Locals.i2c = (I2C_t) { I2C_SDA_PIN, I2C_SCL_PIN };
+
 	uartCmd(CONSOLE_FG_MAGENTA);
     uartPutS("Setting pins..." NEWLINE);
 
@@ -176,10 +180,14 @@ void SP_initHardware(void) {
     SetGpioDirection(LED_PIN, GPIO_OUT);
     SetGpio(LED_PIN, 0);
 
+    uartPutS("Setting irq handlers..." NEWLINE);
+    irqRegister(BCM2835_IRQ_ID_I2C , &I2C_interrupt_handler , &Locals.i2c);
+
+
     uartCmd(CONSOLE_FG_WHITE);
 
     Locals.bmp = BMP180_create();
-    if (!BMP180_initialise(Locals.bmp, Locals.i2c, 35.75f, OSS_Setting)) {
+    if (!BMP180_initialise(Locals.bmp, &Locals.i2c, 35.75f, OSS_Setting)) {
     	BMP180_destroy(&Locals.bmp);
     }
 
