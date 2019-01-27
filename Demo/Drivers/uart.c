@@ -1,7 +1,10 @@
 #include "uart.h"
 #include "bcm2835_intc.h"
+#include "irq.h"
 
 #include <FreeRTOS.h>
+#include <task.h>
+#include <semphr.h>
 
 #define UART_BUFFER_SIZE	128
 
@@ -10,6 +13,8 @@
 #define TXFF 0x20
 #define RXFE 0x10
 #define BUSY 0x08
+
+static volatile xSemaphoreHandle UART_Mutex = NULL;
 
 static volatile xQueueHandle UART_RecvQueue = NULL;
 static volatile xQueueHandle UART_SendQueue = NULL;
@@ -20,6 +25,18 @@ static inline void mmio_write(uint32_t reg, uint32_t data) {
  
 static inline uint32_t mmio_read(uint32_t reg) {
 	return *(volatile uint32_t *)reg;
+}
+
+void uart_lock() {
+	if (UART_Mutex != NULL) {
+		xSemaphoreTake(UART_Mutex, portMAX_DELAY);
+	}
+}
+
+void uart_unlock() {
+	if (UART_Mutex != NULL) {
+		xSemaphoreGive(UART_Mutex);
+	}
 }
 
 enum {
@@ -58,6 +75,16 @@ enum {
     UART0_TDR    = (UART0_BASE + 0x8C),
 };
 
+int uartInit() {
+	// Seems not needed?
+//    SetGpioFunction(UARTS_TX_PIN, 4);
+//    SetGpioFunction(UARTS_RX_PIN, 4);
+
+//	UART_Mutex = xSemaphoreCreateMutex();
+
+	return UART_Mutex != NULL;
+}
+
 int uartEnableInterrupt() {
 	UART_RecvQueue = xQueueCreate(UART_BUFFER_SIZE, sizeof(char));
 	UART_SendQueue = xQueueCreate(UART_BUFFER_SIZE, sizeof(char));
@@ -67,7 +94,7 @@ int uartEnableInterrupt() {
 	return UART_RecvQueue != NULL && UART_SendQueue != NULL;
 }
 
-int uart_interrupt_handler(unsigned int irq, void *pParam) {
+void uart_interrupt_handler(unsigned int irq, void *pParam) {
 	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
 
 	if (irq == BCM2835_IRQ_ID_UART) {
@@ -91,11 +118,7 @@ int uart_interrupt_handler(unsigned int irq, void *pParam) {
 		if(xHigherPriorityTaskWoken) {
 			taskYIELD();
 		}
-
-		return 0;
 	}
-
-	return 1;
 }
 
 void uartPutC(char byte) {
@@ -117,10 +140,24 @@ void uartPutS(const char *s) {
     }
 }
 
-void uartPutI(const uint32_t i){
+void uartPutS_safe(const char *s) {
+	uart_lock();
+    while (*s) {
+        uartPutC(*s++);
+    }
+    uart_unlock();
+}
+
+void uartPutI(const uint32_t i) {
     if(i/10 > 0)
         uartPutI(i/10);
     uartPutC('0' + (i%10));	  
+}
+
+void uartPutI_safe(const uint32_t i) {
+	uart_lock();
+	uartPutI(i);
+	uart_unlock();
 }
 
 void uartPutF(float f) {
@@ -134,6 +171,12 @@ void uartPutF(float f) {
 	uartPutI(integer_part);
 	uartPutC('.');
 	uartPutI((uint32_t)((f - integer_part) * 100.0));
+}
+
+void uartPutF_safe(float f) {
+	uart_lock();
+	uartPutF(f);
+	uart_unlock();
 }
 
 char uartGetC(void) {
@@ -150,34 +193,41 @@ char uartGetC(void) {
 	return c;
 }
 
-void uartGetS(char *s) {
+void uartGetS_safe(char *s) {
+	uart_lock();
 	while ((*s = uartGetC()) != '\r') {
 		uartPutC(*s);
 		s++;
 	}
+	uart_unlock();
 
 	*s = '\0';
 }
 
-int uartGetI(void) {
+int uartGetI_safe(void) {
 	char c;
 	int val = 0;
 
+	uart_lock();
 	while ((c = uartGetC()) != '\r') {
 		uartPutC(c);
 		val *= 10;
 		val += (c - '0');
 	}
+	uart_unlock();
 
 	return val;
 }
 
-void clearLine(int len) {
+void clearLine_safe(int len) {
 	int i;
+
+	uart_lock();
 	uartPutC('\r');
 
 	for (i = 0; i < len; i++) {
 		uartPutC(' ');
 	}
+	uart_unlock();
 }
 

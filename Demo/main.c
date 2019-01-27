@@ -132,14 +132,18 @@
  *    -- the same prototype as you'd see in a linux program.
  **/
 int  main (void) {
+	uartInit();
 	// uartEnableInterrupt();
+	i2cInit();
 
+	uart_lock();
     uartCmd(CONSOLE_RESET);
     uartCmd(CONSOLE_CLS);
     uartCmd(CONSOLE_CURSOR);
     uartCmd(CONSOLE_RESET);
     uartCmd(CONSOLE_FG_BRIGHT_CYAN);
     uartPutS("Booting..." NEWLINE);
+    uart_unlock();
     
     #if defined(EXAMPLEGAME)
         BG_initHardware();
@@ -154,10 +158,12 @@ int  main (void) {
         xTaskCreate(task_PrintProgress, "tskProgress"  , 128, NULL, 0, NULL);
     #endif
 
+	uart_lock();
     uartPutS("Created tasks." NEWLINE);
     uartCmd(CONSOLE_FG_BRIGHT_BLUE);
     uartPutS("Starting scheduler..." NEWLINE);
     uartCmd(CONSOLE_RESET);
+    uart_unlock();
 
     vTaskStartScheduler();
 

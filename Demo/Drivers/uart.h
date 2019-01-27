@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define UARTS_TX_PIN  14
+#define UARTS_RX_PIN  15
+
 #define DEGREES_CELCIUS		"\u00B0C"   ///< Degrees Celcius
 #define NEWLINE				"\r\n"
 
@@ -98,19 +101,26 @@ static const char* CONSOLE_LUT[] = {
 
 #define uartCmd(C) uartPutS(CONSOLE_LUT[(C)])
 
+int uartInit();
 int uartEnableInterrupt();
 
-int uart_interrupt_handler(unsigned int irq, void *pParam);
+void uart_interrupt_handler(unsigned int irq, void *pParam);
+
+void uart_lock();
+void uart_unlock();
 
 void uartPutC(char byte);
 void uartPutS(const char *s);
+void uartPutS_safe(const char *s);
 void uartPutI(const uint32_t i);
+void uartPutI_safe(const uint32_t i);
 void uartPutF(float f);
+void uartPutF_safe(float f);
 
 char uartGetC(void);
-void uartGetS(char *s);
-int  uartGetI(void);
+void uartGetS_safe(char *s);
+int  uartGetI_safe(void);
 
-void clearLine(int len);
+void clearLine_safe(int len);
 
 #endif // UART_H

@@ -51,10 +51,10 @@ struct {
 static void taskButtons(void) {
 	int p1 = 0, p2 = 0;
 
-	uartPutS("Start button task." NEWLINE);
+	uartPutS_safe("Start button task." NEWLINE);
 	GpioDetectEdge(BUTTON_1_PIN);
 	GpioDetectEdge(BUTTON_2_PIN);
-	vTaskDelay(1);
+	vTaskDelay(1 / portTICK_RATE_MS);
 
 	while (1) {
 		if (!Game.won) {
@@ -72,35 +72,41 @@ static void taskButtons(void) {
 			GpioDetectEdge(BUTTON_1_PIN);
 			GpioDetectEdge(BUTTON_2_PIN);
 		}
-		vTaskDelay(1);
+		vTaskDelay(1 / portTICK_RATE_MS);
 	}
 }
 
 static void taskGameloop(void) {
 	int i;
 
-	uartPutS("Start game task." NEWLINE);
+	uartPutS_safe("Start game task." NEWLINE);
 
 	do {
 		Game.won = Game.quit = true;
-		vTaskDelay(10);
+		vTaskDelay(10 / portTICK_RATE_MS);
 		Game.btn1_pressed = Game.btn2_pressed = false;
 		Game.round = Game.score_p1 = Game.score_p2 = 0;
 
+		uart_lock();
 		uartPutS("Enter win message for Player 1 (button pin ");
 		uartPutI(BUTTON_1_PIN);
 		uartPutS("): ");
-		uartGetS(Game.win_msg_p1);
-		clearLine(50 + MESSAGE_BUFFER);
+		uart_unlock();
+		uartGetS_safe(Game.win_msg_p1);
+		clearLine_safe(50 + MESSAGE_BUFFER);
 
+		uart_lock();
 		uartPutS("\rEnter win message for Player 2 (button pin ");
 		uartPutI(BUTTON_2_PIN);
 		uartPutS("): ");
-		uartGetS(Game.win_msg_p2);
-		clearLine(50 + MESSAGE_BUFFER);
+		uart_unlock();
+		uartGetS_safe(Game.win_msg_p2);
+		clearLine_safe(50 + MESSAGE_BUFFER);
 
+		uart_lock();
 		uartCmd(CONSOLE_CLS);
 		uartCmd(CONSOLE_CURSOR);
+		uart_unlock();
 
 		while (Game.round < GAME_ROUNDS + 1) {
 			if (Game.won) {
@@ -108,42 +114,47 @@ static void taskGameloop(void) {
 
 				if (Game.btn1_pressed) {
 					Game.score_p1++;
-					uartPutS("Player 1 wins this round!" NEWLINE);
+					uartPutS_safe("Player 1 wins this round!" NEWLINE);
 				} else if (Game.btn2_pressed) {
 					Game.score_p2++;
-					uartPutS("Player 2 wins this round!" NEWLINE);
+					uartPutS_safe("Player 2 wins this round!" NEWLINE);
 				}
 
 				Game.btn1_pressed = Game.btn2_pressed = false;
 
 				if (Game.round == GAME_ROUNDS) break;
 
+				uart_lock();
 				uartCmd(CONSOLE_FG_BRIGHT_YELLOW);
 				uartPutS(NEWLINE "Round ");
 				uartPutI(++Game.round);
 				uartPutS(NEWLINE);
 
 				uartCmd(CONSOLE_RESET);
+				uart_unlock();
 
 				for (i = 3; i--;) {
+					uart_lock();
 					uartPutS("New game starts in ");
 					uartPutI(i);
 					uartPutS("...\r");
-					vTaskDelay(1000);
+					uart_unlock();
+					vTaskDelay(1000 / portTICK_RATE_MS);
 				}
 
-				uartPutS(NEWLINE);
+				uartPutS_safe(NEWLINE);
 				SetGpio(LED_PIN, 1);
 				Game.won = false;
 			}
 
-			vTaskDelay(10);
+			vTaskDelay(10 / portTICK_RATE_MS);
 		}
 
-		Game.won = true;
+		Game.won  = true;
 		Game.quit = false;
-		vTaskDelay(10);
+		vTaskDelay(10 / portTICK_RATE_MS);
 
+		uart_lock();
 		uartCmd(CONSOLE_FG_RED);
 		uartPutS(NEWLINE "Game over." NEWLINE NEWLINE);
 		uartCmd(CONSOLE_FG_CYAN);
@@ -163,7 +174,10 @@ static void taskGameloop(void) {
 		uartCmd(CONSOLE_FG_BRIGHT_RED);
 		uartPutI(i ? Game.score_p1 : Game.score_p2);
 		uartCmd(CONSOLE_RESET);
+		uart_unlock();
+		vTaskDelay(1 / portTICK_RATE_MS);
 
+		uart_lock();
 		if (i) {
 			uartPutS(NEWLINE "Player 1 says: ");
 			uartCmd(CONSOLE_FG_BRIGHT_MAGENTA);
@@ -181,12 +195,13 @@ static void taskGameloop(void) {
 
 		uartCmd(CONSOLE_FG_YELLOW);
 		uartPutS("To restart, press both buttons at the same time..." NEWLINE);
+		uart_unlock();
 
 		while (true) {
 			int b1 = GpioDetectEdge(BUTTON_1_PIN);
-			vTaskDelay(50);
+			vTaskDelay(50 / portTICK_RATE_MS);
 			int b2 = GpioDetectEdge(BUTTON_2_PIN);
-			vTaskDelay(50);
+			vTaskDelay(50 / portTICK_RATE_MS);
 
 			if (b1 && b2) {
 				Game.quit = false;
@@ -194,18 +209,22 @@ static void taskGameloop(void) {
 			}
 		}
 
-		vTaskDelay(10);
+		vTaskDelay(10 / portTICK_RATE_MS);
+		uart_lock();
 		uartCmd(CONSOLE_RESET);
 		uartCmd(CONSOLE_CLS);
 		uartCmd(CONSOLE_CURSOR);
+		uart_unlock();
 	} while (!Game.quit);
 
 	vTaskDelete(NULL);
 };
 
 void BG_initHardware(void) {
+	uart_lock();
 	uartCmd(CONSOLE_FG_MAGENTA);
     uartPutS("Setting pins for game..." NEWLINE);
+    uart_unlock();
 
     SetGpioFunction(BUTTON_1_PIN, 1);
     SetGpioDirection(BUTTON_1_PIN, GPIO_IN);

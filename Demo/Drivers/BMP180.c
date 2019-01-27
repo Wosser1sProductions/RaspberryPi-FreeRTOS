@@ -68,26 +68,26 @@ extern void* pvPortMalloc(size_t);
 
 /******************************************************/
 static bool BMP180_ReadRawTemperature(BMP180_t *self, int16_t* pUt) {
-    int error = 0;
+    int status = 0;
 
     // request temperature measurement
     self->m_data[0] = 0xF4;
     self->m_data[1] = 0x2E;
 
     // write 0XF2 into reg 0XF4
-    error += I2C_master_transmit(self->i2c, BMP180_ADDRESS, self->m_data, 2u);
-    vTaskDelay(5);
+    status += I2C_master_transmit(self->i2c, BMP_WRITE_ADDRESS, self->m_data, 2u);
+    vTaskDelay(5 / portTICK_RATE_MS );
 
     // read raw temperature data
     self->m_data[0] = 0xF6;
 
     // set eeprom pointer position to 0XF6
-    error += I2C_master_transmit(self->i2c, BMP180_ADDRESS, self->m_data, 2u);
+    status += I2C_master_transmit(self->i2c, BMP_WRITE_ADDRESS, self->m_data, 2u);
 
     // get 16 bits at this position
-    error += I2C_master_receive(self->i2c, BMP180_ADDRESS, self->m_data, 2u);
+    status += I2C_master_receive(self->i2c, BMP_READ_ADDRESS, self->m_data, 2u);
 
-    if (error) {
+    if (status) {
         return 1;
     }
 
@@ -97,28 +97,28 @@ static bool BMP180_ReadRawTemperature(BMP180_t *self, int16_t* pUt) {
 }
 
 static bool BMP180_ReadRawPressure(BMP180_t *self, int32_t* pUp) {
-    int error = 0;
+    int status = 0;
 
     // request pressure measurement
     self->m_data[0] = 0xF4;
     self->m_data[1] = 0x34 + (self->m_oss << 6);
 
     // write 0x34 + (m_oss << 6) into reg 0XF4
-    error += I2C_master_transmit(self->i2c, BMP180_ADDRESS, self->m_data, 2u);
+    status += I2C_master_transmit(self->i2c, BMP_WRITE_ADDRESS, self->m_data, 2u);
 
     // Rounded up wait times to be safe
-    vTaskDelay(self->m_oss);
+    vTaskDelay(self->m_oss / portTICK_RATE_MS);
 
     // read raw pressure data
     self->m_data[0] = 0xF6;
 
     // set eeprom pointer position to 0XF6
-    error += I2C_master_transmit(self->i2c, BMP180_ADDRESS, self->m_data, 1u);
+    status += I2C_master_transmit(self->i2c, BMP_WRITE_ADDRESS, self->m_data, 1u);
 
     // get 16 bits at this position
-    error += I2C_master_receive(self->i2c, BMP180_ADDRESS, self->m_data, 2u);
+    status += I2C_master_receive(self->i2c, BMP_READ_ADDRESS, self->m_data, 2u);
 
-    if (error) {
+    if (status) {
         return 1;
     }
 
@@ -182,9 +182,9 @@ inline void BMP180_destroy(BMP180_t **self) {
 
 bool BMP180_initialise(BMP180_t *self, I2C_t *i2c, float altitude, OverSamplingSetting_t oss) {
     uint8_t data[22];
-    int error = 0;
+    int status = 0;
 
-    uartPutS("[CREATE] BMP180 : Initialising... ");
+    uartPutS_safe("[CREATE] BMP180 : Initialising... ");
 
     self->i2c        = i2c;
     self->m_altitude = altitude;
@@ -193,12 +193,17 @@ bool BMP180_initialise(BMP180_t *self, I2C_t *i2c, float altitude, OverSamplingS
     // read calibration data
     data[0] = 0xAA;
 
-    // set the eeprom pointer position to 0xAA
-    error += I2C_master_transmit(self->i2c, BMP180_ADDRESS, data, 1u);
-    // read 11 x 16 bits at this position
-    error += I2C_master_receive(self->i2c, BMP180_ADDRESS, data, 22u);
+    if (status == 0) {
+		// set the eeprom pointer position to 0xAA
+		status = I2C_master_transmit(self->i2c, BMP_WRITE_ADDRESS, data, 1u);
+    }
 
-    if (error == 0) {
+    if (status == 0) {
+        // read 11 x 16 bits at this position
+        status = I2C_master_receive(self->i2c, BMP_READ_ADDRESS, data, 22u);
+    }
+
+    if (status == 0) {
         // store calibration data for further calculus
         self->ac1 = data[0]  << 8 | data[1];
         self->ac2 = data[2]  << 8 | data[3];
@@ -216,14 +221,20 @@ bool BMP180_initialise(BMP180_t *self, I2C_t *i2c, float altitude, OverSamplingS
         self->ac1 = self->ac1 << 2;
         self->mc  = (0xFFFF0000 | self->mc) << 11;
 
+        uart_lock();
     	uartCmd(CONSOLE_FG_GREEN);
     	uartPutS("Ok" NEWLINE);
+    	uartCmd(CONSOLE_RESET);
+    	uart_unlock();
     } else {
+    	uart_lock();
     	uartCmd(CONSOLE_FG_RED);
     	uartPutS("Error" NEWLINE);
+    	uartCmd(CONSOLE_RESET);
+    	uart_unlock();
     }
 
-    return error == 0;
+    return status == 0;
 }
 
 bool BMP180_readData(BMP180_t *self, float *pTemperature, float *pPressure) {

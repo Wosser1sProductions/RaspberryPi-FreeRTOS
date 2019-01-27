@@ -55,11 +55,11 @@ static void putTemperatureColour(float t) {
 static void taskButtons(void) {
 	int p1 = 0, p2 = 0;
 
-	uartPutS("Start Button task." NEWLINE);
+	uartPutS_safe("Start Button task." NEWLINE);
 
 	GpioDetectEdge(BUTTON_1_PIN);
 	GpioDetectEdge(BUTTON_2_PIN);
-	vTaskDelay(1);
+	vTaskDelay(1 / portTICK_RATE_MS);
 
 	while (1) {
 		p1 = GpioDetectEdge(BUTTON_1_PIN);
@@ -76,26 +76,29 @@ static void taskButtons(void) {
 		}
 
 		if (p1 | p2) {
+			uart_lock();
 			uartCmd(CONSOLE_RESET);
 			uartCmd(CONSOLE_FG_MAGENTA);
 			uartPutS("Period changed to ");
 			uartPutI(Locals.pwm_period);
 			uartPutS(NEWLINE);
 			uartCmd(CONSOLE_RESET);
+			uart_unlock();
 		}
 
-		vTaskDelay(250);
+		vTaskDelay(150 / portTICK_RATE_MS);
 	}
 }
 
 static void taskLED(void) {
-	int i, delay = 0;
+	uint32_t i;
 
-	uartPutS("Start LED task." NEWLINE);
+	uartPutS_safe("Start LED task." NEWLINE);
 
 	while (true) {
 		if (Locals.pwm_period <= PWM_PERIOD_MS_MIN) {
 			SetGpio(LED_PIN, 1);
+			vTaskDelay(10 / portTICK_RATE_MS);
 		} else {
 			for (i = 1; i < Locals.pwm_period; i++) {
 				const uint32_t max = MAX((int)Locals.pwm_period - i, 1);
@@ -119,52 +122,70 @@ static void taskLED(void) {
 }
 
 static void taskSensor(void) {
-	uartPutS("Start Sensor task." NEWLINE);
+	uartPutS_safe("Start Sensor task." NEWLINE);
 
     // Check https://github.com/fdellorso/RaspberryPi-FreeRTOS
-    
-//	if (Locals.bmp == NULL) {
-//		uartCmd(CONSOLE_FG_RED);
-//		uartPutS("ERROR Sensor not initialised!." NEWLINE);
-//		uartCmd(CONSOLE_RESET);
-//		return;
-//	}
+
+	if (!BMP180_initialise(Locals.bmp, &Locals.i2c, 35.75f, OSS_Setting)) {
+    	uartPutI(9);
+    	BMP180_destroy(&Locals.bmp);
+    	uartPutS_safe("taskSensor: init error, delete task." NEWLINE);
+		vTaskDelete(NULL);
+		return;
+    }
 
 	while (true) {
-		//BMP180_readData(Locals.bmp, &Locals.measured_temp, &Locals.measured_pres);
-		Locals.measured_temp += 1.0f; Locals.measured_pres += 1.0f;
-		vTaskDelay(1000);
+		BMP180_readData(Locals.bmp, &Locals.measured_temp, &Locals.measured_pres);
+		//Locals.measured_temp += 1.0f; Locals.measured_pres += 1.0f;
+
+		vTaskDelay(1000 / portTICK_RATE_MS);
 	}
 }
 
 static void taskMain(void) {
-	uartPutS("Start main task." NEWLINE);
+	uartPutS_safe("Start main task." NEWLINE);
 
 	while (true) {
-		uartCmd(CONSOLE_FG_WHITE);
-		uartPutS("Sensor temperature: ");
-		putTemperatureColour(Locals.measured_temp);
-		uartPutF(Locals.measured_temp);
-		uartPutS(" " DEGREES_CELCIUS NEWLINE);
-		uartCmd(CONSOLE_RESET);
+		if (Locals.bmp) {
+			uart_lock();
+			uartCmd(CONSOLE_FG_WHITE);
+			uartPutS("Sensor temperature: ");
+			putTemperatureColour(Locals.measured_temp);
+			uartPutF(Locals.measured_temp);
+			uartPutS(" " DEGREES_CELCIUS NEWLINE);
+			uartCmd(CONSOLE_RESET);
+			uart_unlock();
 
-		uartCmd(CONSOLE_FG_WHITE);
-		uartPutS("   Sensor pressure: ");
-		uartCmd(CONSOLE_BOLD);
-		uartCmd(CONSOLE_FG_BRIGHT_WHITE);
-		uartPutF(Locals.measured_pres);
-		uartPutS(" hPa" NEWLINE);
-		uartCmd(CONSOLE_RESET);
+			vTaskDelay(1 / portTICK_RATE_MS);
 
-		vTaskDelay(5000);
+			uart_lock();
+			uartCmd(CONSOLE_FG_WHITE);
+			uartPutS("   Sensor pressure: ");
+			uartCmd(CONSOLE_BOLD);
+			uartCmd(CONSOLE_FG_BRIGHT_WHITE);
+			uartPutF(Locals.measured_pres);
+			uartPutS(" hPa" NEWLINE);
+			uartCmd(CONSOLE_RESET);
+			uart_unlock();
+		} else {
+			uart_lock();
+			uartCmd(CONSOLE_FG_RED);
+			uartPutS("taskMain: ERROR Sensor not initialised!." NEWLINE);
+			uartCmd(CONSOLE_RESET);
+			uart_unlock();
+		}
+
+		vTaskDelay(5000 / portTICK_RATE_MS);
 	}
 }
 
 void SP_initHardware(void) {
     Locals.i2c = (I2C_t) { I2C_SDA_PIN, I2C_SCL_PIN };
 
+    uart_lock();
 	uartCmd(CONSOLE_FG_MAGENTA);
     uartPutS("Setting pins..." NEWLINE);
+    uart_unlock();
 
     SetGpioFunction(BUTTON_1_PIN, 1);
     SetGpioDirection(BUTTON_1_PIN, GPIO_IN);
@@ -180,16 +201,12 @@ void SP_initHardware(void) {
     SetGpioDirection(LED_PIN, GPIO_OUT);
     SetGpio(LED_PIN, 0);
 
-    uartPutS("Setting irq handlers..." NEWLINE);
-    irqRegister(BCM2835_IRQ_ID_I2C , &I2C_interrupt_handler , &Locals.i2c);
-
+    uartPutS_safe("Setting irq handlers..." NEWLINE);
+    //irqRegister(BCM2835_IRQ_ID_I2C , &I2C_interrupt_handler , &Locals.i2c);
 
     uartCmd(CONSOLE_FG_WHITE);
 
     Locals.bmp = BMP180_create();
-    if (!BMP180_initialise(Locals.bmp, &Locals.i2c, 35.75f, OSS_Setting)) {
-    	BMP180_destroy(&Locals.bmp);
-    }
 
     Locals.pwm_period = PWM_PERIOD_MS;
 
@@ -197,8 +214,8 @@ void SP_initHardware(void) {
 }
 
 void SP_startTasks(void) {
-	xTaskCreate(taskSensor , "taskSensor" , 128, NULL, 0, NULL);
+	xTaskCreate(taskSensor , "taskSensor" , 256, NULL, 0, NULL);
 	xTaskCreate(taskMain   , "taskMain"   , 128, NULL, 1, NULL);
-	xTaskCreate(taskLED    , "taskLED"    , 128, NULL, 2, NULL);
-	xTaskCreate(taskButtons, "taskButtons", 128, NULL, 0, NULL);
+//	xTaskCreate(taskLED    , "taskLED"    , 128, NULL, 2, NULL);
+//	xTaskCreate(taskButtons, "taskButtons", 128, NULL, 0, NULL);
 }

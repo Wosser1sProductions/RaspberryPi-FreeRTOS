@@ -6,44 +6,292 @@
  */
 #include "bcm2835_intc.h"
 #include "i2c.h"
+#include "gpio.h"
+#include "uart.h"
 
-int I2C_interrupt_handler(unsigned int irq, void *pParam) {
+#include <FreeRTOS.h>
+#include <task.h>
+
+static inline void mmio_write(uint32_t reg, uint32_t data) {
+	*(volatile uint32_t *)reg = data;
+}
+
+static inline void mmio_write_or(uint32_t reg, uint32_t data) {
+	*(volatile uint32_t *)reg |= data;
+}
+
+static inline void mmio_write_not(uint32_t reg, uint32_t data) {
+	*(volatile uint32_t *)reg &= ~data;
+}
+
+static inline uint32_t mmio_read(uint32_t reg) {
+	return *(volatile uint32_t *)reg;
+}
+
+static inline uint32_t mmio_read_bit(uint32_t reg, uint32_t bit) {
+	return mmio_read(reg) & bit;
+}
+
+
+enum {
+    // The base address for I2C. 0x20205000 or 0x20804000?
+	I2C_BASE  = 0x20205000,
+
+    // The offsets for reach register for I2C.
+	I2C_CONTROL             = (I2C_BASE + 0x00),
+	I2C_STATUS              = (I2C_BASE + 0x01),
+	I2C_DLEN                = (I2C_BASE + 0x02),
+	I2C_SLAVE_ADDR          = (I2C_BASE + 0x03),
+	I2C_FIFO                = (I2C_BASE + 0x04),
+	I2C_CLK_DIV             = (I2C_BASE + 0x05),
+	I2C_DATA_DELAY          = (I2C_BASE + 0x06),
+	I2C_CLK_STRETCH_TIMEOUT = (I2C_BASE + 0x07),
+
+	// I2C Setting bits
+	I2C_CTRL_I2CEN  = (1 << 15),
+	I2C_CTRL_INTR   = (1 << 10),
+	I2C_CTRL_INTT   = (1 << 9) ,
+	I2C_CTRL_INTD   = (1 << 8) ,
+	I2C_CTRL_ST     = (1 << 7) ,
+	I2C_CTRL_CLEAR  = (1 << 4) ,
+	I2C_CTRL_READ   = 1,
+
+	START_READ      = I2C_CTRL_I2CEN|I2C_CTRL_ST|I2C_CTRL_CLEAR|I2C_CTRL_READ,
+	START_WRITE     = I2C_CTRL_I2CEN|I2C_CTRL_ST,
+
+	I2C_STATUS_CLKT = (1 << 9),
+	I2C_STATUS_ERR  = (1 << 8),
+	I2C_STATUS_RXF  = (1 << 7),
+	I2C_STATUS_TXE  = (1 << 6),
+	I2C_STATUS_RXD  = (1 << 5),
+	I2C_STATUS_TXD  = (1 << 4),
+	I2C_STATUS_RXR  = (1 << 3),
+	I2C_STATUS_TXW  = (1 << 2),
+	I2C_STATUS_DONE = (1 << 1),
+	I2C_STATUS_TA   = 1,
+
+	CLEAR_STATUS    =  I2C_STATUS_CLKT|I2C_STATUS_ERR|I2C_STATUS_DONE,
+};
+
+int i2cInit() {
+//    SetGpioFunction(I2C_SDA_PIN, 4);
+//    SetGpioFunction(I2C_SCL_PIN, 4);
+//
+//    PutGpio(I2C_SDA_PIN, PULL_UP);
+//    PutGpio(I2C_SCL_PIN, PULL_UP);
+
+#define INP_GPIO(g) 		*(((unsigned long*)0x20200000) + ((g)/10)) &= ~(7<<(((g)%10)*3))
+#define SET_GPIO_ALT(g,a) 	*(((unsigned long*)0x20200000) + (((g)/10))) |= (((a)<=3?(a) + 4:(a)==4?3:2)<<(((g)%10)*3))
+
+    INP_GPIO(I2C_SDA_PIN);
+    SET_GPIO_ALT(I2C_SDA_PIN, 0);
+    INP_GPIO(I2C_SCL_PIN);
+    SET_GPIO_ALT(I2C_SCL_PIN, 0);
+
+    return 0;
+}
+
+void I2C_Status() {
+	uart_lock();
+	uartPutS("I2C: ERR=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_ERR)  != 0);
+
+	uartPutS("  RXF=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_RXF)  != 0);
+
+	uartPutS("  TXE=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_TXE)  != 0);
+
+	uartPutS("  RXD=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_RXD)  != 0);
+
+	uartPutS("  RXR=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_RXR)  != 0);
+
+	uartPutS("  TXW=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_TXW)  != 0);
+
+	uartPutS("  DONE=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_DONE) != 0);
+
+	uartPutS("  TA=");
+	uartPutI(mmio_read_bit(I2C_STATUS, I2C_STATUS_TA)   != 0);
+
+	uartPutS(NEWLINE);
+	uart_unlock();
+}
+
+void I2C_interrupt_handler(unsigned int irq, void *pParam) {
 	I2C_t* i2c = (I2C_t*) pParam;
 
 	if (irq == BCM2835_IRQ_ID_I2C) {
 
-		return 0;
+	}
+}
+
+static int I2C_WaitUntilDone() {
+	// Wait till done, let's use a timeout just in case
+	int timeout = 50;
+
+	while (!mmio_read_bit(I2C_STATUS, I2C_STATUS_DONE) && --timeout > 0) {
+		//uartPutS_safe("I2C_WaitUntilDone: Not done and within time..." NEWLINE);
+		vTaskDelay(50);
 	}
 
-	return 1;
+	if (timeout == 0) {
+		uart_lock();
+		uartCmd(CONSOLE_FG_RED);
+		uartPutS("ERR I2C timeout?" NEWLINE);
+		uartCmd(CONSOLE_RESET);
+		uart_unlock();
+		return 1;
+	}
+
+	//uartPutS_safe("I2C_WaitUntilDone: OK" NEWLINE);
+
+	return 0;
 }
+
+#if 1
+static volatile uint32_t *i2c_reg = (uint32_t *)I2C_BASE;
+
+#define BSC0_C        	*(i2c_reg + 0x00)
+#define BSC0_S        	*(i2c_reg + 0x01)
+#define BSC0_DLEN    	*(i2c_reg + 0x02)
+#define BSC0_A        	*(i2c_reg + 0x03)
+#define BSC0_FIFO    	*(i2c_reg + 0x04)
+
+#define BSC_C_I2CEN    	(1 << 15)
+#define BSC_C_INTR    	(1 << 10)
+#define BSC_C_INTT    	(1 << 9)
+#define BSC_C_INTD    	(1 << 8)
+#define BSC_C_ST    	(1 << 7)
+#define BSC_C_CLEAR    	(1 << 4)
+#define BSC_C_READ    	1
+
+#define BSC_S_CLKT	(1 << 9)
+#define BSC_S_ERR    	(1 << 8)
+#define BSC_S_RXF    	(1 << 7)
+#define BSC_S_TXE    	(1 << 6)
+#define BSC_S_RXD    	(1 << 5)
+#define BSC_S_TXD    	(1 << 4)
+#define BSC_S_RXR    	(1 << 3)
+#define BSC_S_TXW    	(1 << 2)
+#define BSC_S_DONE   	(1 << 1)
+#define BSC_S_TA    	1
+
+void wait_i2c_done() {
+	//Wait till done, let's use a timeout just in case
+	int timeout = 50;
+	while ((!((BSC0_S) & BSC_S_DONE)) && --timeout) {
+		vTaskDelay(1);
+	}
+	if (timeout == 0) {
+		uart_lock();
+		uartCmd(CONSOLE_FG_RED);
+		uartPutS("ERR I2C timeout?" NEWLINE);
+		uartCmd(CONSOLE_RESET);
+		uart_unlock();
+	}
+}
+
+#endif
+
 
 int I2C_master_transmit(I2C_t* i2c, uint8_t addr, uint8_t *pData, uint16_t size) {
-	// Free?
-	// ...
 
-	// Send addr
+    BSC0_A = addr;
 
+    BSC0_DLEN = size;
+
+//    BSC0_FIFO = (uint8_t)0; // reg 0?
+
+    uart_lock();
+    uartPutS("Write: ");
 	for (uint16_t i = 0; i < size; i++) {
-		//send_reg = pData[i]
+		BSC0_FIFO = pData[i];
+		uartPutI(pData[i]);
+		uartPutC(',');
 	}
+	uartPutS(NEWLINE);
+	uart_unlock();
 
-	// Close
+//    uartPutS_safe("I2C start write" NEWLINE);
 
-	return 1;
+    BSC0_S = CLEAR_STATUS; 	// Reset status bits (see #define)
+    BSC0_C = START_WRITE;    	// Start Write (see #define)
+
+    wait_i2c_done();
+
+//    uartPutS_safe("I2C write done" NEWLINE);
+
+	return 0;
+
+//	mmio_write_or(I2C_STATUS, CLEAR_STATUS);
+//	mmio_write_or(I2C_CONTROL, I2C_CTRL_CLEAR);
+//
+//	mmio_write(I2C_SLAVE_ADDR, addr);
+//	mmio_write(I2C_DLEN, size); // Before or after FIFO write?
+//
+//	for (uint16_t i = 0; i < size; i++) {
+//		mmio_write(I2C_FIFO, pData[i]);
+//	}
+//
+//	mmio_write(I2C_STATUS, CLEAR_STATUS);
+//	mmio_write_not(I2C_CONTROL, I2C_CTRL_READ);
+//	mmio_write(I2C_CONTROL, START_WRITE);
+//
+//	return I2C_WaitUntilDone();
 }
 
-int I2C_master_receive (I2C_t* i2c, uint8_t addr, uint8_t *pData, uint16_t size) {
-	// Data available?
-	// ...
+int I2C_master_receive(I2C_t* i2c, uint8_t addr, uint8_t *pData, uint16_t size) {
 
-	// Send addr
+    BSC0_DLEN = size;
 
+//    uartPutS_safe("I2C start read" NEWLINE);
+
+    BSC0_S = CLEAR_STATUS;	// Reset status bits (see #define)
+    BSC0_C = START_READ;    	// Start Read after clearing FIFO (see #define)
+
+    wait_i2c_done();
+
+    uart_lock();
+    uartPutS("Read: ");
 	for (uint16_t i = 0; i < size; i++) {
-		//pData[i] = recv_reg
+		pData[i] = BSC0_FIFO & 0xFF;
+		uartPutI(pData[i]);
+		uartPutC(',');
 	}
+	uartPutS(NEWLINE);
+	uart_unlock();
 
-	// Close
+//    uartPutS_safe("I2C read done" NEWLINE);
 
-	return 1;
+	return 0;
+
+
+//	#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+//
+//	mmio_write(I2C_SLAVE_ADDR, addr);
+//
+//	while (size > 0) {
+//		// Read data per block of 8 bytes
+//		const int block_len = MIN(size, 8);
+//
+//		mmio_write_or(I2C_STATUS, CLEAR_STATUS);
+//		mmio_write_or(I2C_CONTROL, I2C_CTRL_CLEAR);
+//		mmio_write(I2C_DLEN, block_len);
+//		mmio_write(I2C_CONTROL, START_READ);
+//
+//		if (I2C_WaitUntilDone()) return 1;  // timeout
+//
+//		for (uint16_t i = 0; i < block_len; i++, pData++) {
+//			*(pData + i) = mmio_read(I2C_FIFO) & 0xFF;
+//		}
+//
+//		size -= block_len;
+//		vTaskDelay(1);
+//	}
+//
+//	return 0;
 }
