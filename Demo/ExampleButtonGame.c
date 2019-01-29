@@ -14,8 +14,6 @@
 #include "Drivers/gpio.h"
 #include "Drivers/uart.h"
 
-//static xTaskHandle TaskButton;
-
 struct {
 	bool btn1_pressed;
 	bool btn2_pressed;

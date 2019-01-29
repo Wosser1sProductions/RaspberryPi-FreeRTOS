@@ -221,7 +221,7 @@ void vPortEndScheduler( void )
 void vTickISR (unsigned int nIRQ, void *pParam)
 {
     (void)nIRQ;
-    (void*)pParam;
+    (void)pParam;
 
 	vTaskIncrementTick();
 

@@ -70,6 +70,7 @@
 #include "Drivers/irq.h"
 #include "Drivers/gpio.h"
 #include "Drivers/uart.h"
+#include "Drivers/i2c.h"
 
 //#define EXAMPLEGAME
 #define SENSORPROJECT

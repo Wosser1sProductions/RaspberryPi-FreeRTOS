@@ -281,7 +281,8 @@ typedef struct xTASK_PARAMTERS
  * \defgroup xTaskCreate xTaskCreate
  * \ingroup Tasks
  */
-#define xTaskCreate( pvTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask ) xTaskGenericCreate( ( pvTaskCode ), ( pcName ), ( usStackDepth ), ( pvParameters ), ( uxPriority ), ( pxCreatedTask ), ( NULL ), ( NULL ) )
+#define xTaskCreate( pvTaskCode, pcName, usStackDepth, pvParameters, uxPriority, pxCreatedTask ) \
+	xTaskGenericCreate( (pdTASK_CODE)( pvTaskCode ), (const signed char * const)( pcName ), ( usStackDepth ), (void*)( pvParameters ), (unsigned portBASE_TYPE)( uxPriority ), (xTaskHandle *)( pxCreatedTask ), (portSTACK_TYPE*)( NULL ), (const xMemoryRegion * const)( NULL ) )
 
 /**
  * task. h

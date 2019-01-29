@@ -86,7 +86,7 @@ static void taskButtons(void) {
 			uart_unlock();
 		}
 
-		vTaskDelay(150 / portTICK_RATE_MS);
+		vTaskDelay(250 / portTICK_RATE_MS);
 	}
 }
 
@@ -124,10 +124,7 @@ static void taskLED(void) {
 static void taskSensor(void) {
 	uartPutS_safe("Start Sensor task." NEWLINE);
 
-    // Check https://github.com/fdellorso/RaspberryPi-FreeRTOS
-
 	if (!BMP180_initialise(Locals.bmp, &Locals.i2c, 35.75f, OSS_Setting)) {
-    	uartPutI(9);
     	BMP180_destroy(&Locals.bmp);
     	uartPutS_safe("taskSensor: init error, delete task." NEWLINE);
 		vTaskDelete(NULL);
@@ -137,7 +134,6 @@ static void taskSensor(void) {
 	while (true) {
 		BMP180_readData(Locals.bmp, &Locals.measured_temp, &Locals.measured_pres);
 		//Locals.measured_temp += 1.0f; Locals.measured_pres += 1.0f;
-
 		vTaskDelay(1000 / portTICK_RATE_MS);
 	}
 }
@@ -173,6 +169,8 @@ static void taskMain(void) {
 			uartPutS("taskMain: ERROR Sensor not initialised!." NEWLINE);
 			uartCmd(CONSOLE_RESET);
 			uart_unlock();
+			vTaskDelete(NULL);
+			return;
 		}
 
 		vTaskDelay(5000 / portTICK_RATE_MS);
@@ -201,7 +199,7 @@ void SP_initHardware(void) {
     SetGpioDirection(LED_PIN, GPIO_OUT);
     SetGpio(LED_PIN, 0);
 
-    uartPutS_safe("Setting irq handlers..." NEWLINE);
+    //uartPutS_safe("Setting irq handlers..." NEWLINE);
     //irqRegister(BCM2835_IRQ_ID_I2C , &I2C_interrupt_handler , &Locals.i2c);
 
     uartCmd(CONSOLE_FG_WHITE);
@@ -216,6 +214,6 @@ void SP_initHardware(void) {
 void SP_startTasks(void) {
 	xTaskCreate(taskSensor , "taskSensor" , 256, NULL, 0, NULL);
 	xTaskCreate(taskMain   , "taskMain"   , 128, NULL, 1, NULL);
-//	xTaskCreate(taskLED    , "taskLED"    , 128, NULL, 2, NULL);
-//	xTaskCreate(taskButtons, "taskButtons", 128, NULL, 0, NULL);
+	xTaskCreate(taskLED    , "taskLED"    , 128, NULL, 2, NULL);
+	xTaskCreate(taskButtons, "taskButtons", 128, NULL, 0, NULL);
 }

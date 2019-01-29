@@ -136,15 +136,14 @@ int ReadGpio(uint32_t pinNum) {
 void PutGpio(uint32_t pinNum, GpioPull_t state) {
 	const uint32_t offset = pinNum / 32;
 	const uint32_t mask   = (1 << (pinNum % 32));
-	volatile int i;
 
 	pRegs->GPPUD[0]          = state;
 
-	for (i = 150; i--;) ASMNOP();
+	wait_cycles(150);
 
 	pRegs->GPPUDCLK[offset] |= mask;
 
-	for (i = 150; i--;) ASMNOP();
+	wait_cycles(150);
 
 	pRegs->GPPUD[0]          = PULL_DISABLE;
 	pRegs->GPPUDCLK[offset] &= ~mask;

@@ -5,12 +5,16 @@
  *      Author: William
  */
 #include "bcm2835_intc.h"
+#include "../utils.h"
 #include "i2c.h"
 #include "gpio.h"
 #include "uart.h"
 
 #include <FreeRTOS.h>
 #include <task.h>
+#include <semphr.h>
+
+static volatile xSemaphoreHandle I2C_Mutex = NULL;
 
 static inline void mmio_write(uint32_t reg, uint32_t data) {
 	*(volatile uint32_t *)reg = data;
@@ -32,6 +36,17 @@ static inline uint32_t mmio_read_bit(uint32_t reg, uint32_t bit) {
 	return mmio_read(reg) & bit;
 }
 
+void i2c_lock() {
+	if (I2C_Mutex != NULL) {
+		xSemaphoreTake(I2C_Mutex, portMAX_DELAY);
+	}
+}
+
+void i2c_unlock() {
+	if (I2C_Mutex != NULL) {
+		xSemaphoreGive(I2C_Mutex);
+	}
+}
 
 enum {
     // The base address for I2C. 0x20205000 or 0x20804000?
@@ -74,21 +89,15 @@ enum {
 };
 
 int i2cInit() {
-//    SetGpioFunction(I2C_SDA_PIN, 4);
-//    SetGpioFunction(I2C_SCL_PIN, 4);
-//
-//    PutGpio(I2C_SDA_PIN, PULL_UP);
-//    PutGpio(I2C_SCL_PIN, PULL_UP);
+    SetGpioFunction(I2C_SDA_PIN, 4);
+    SetGpioFunction(I2C_SCL_PIN, 4);
 
-#define INP_GPIO(g) 		*(((unsigned long*)0x20200000) + ((g)/10)) &= ~(7<<(((g)%10)*3))
-#define SET_GPIO_ALT(g,a) 	*(((unsigned long*)0x20200000) + (((g)/10))) |= (((a)<=3?(a) + 4:(a)==4?3:2)<<(((g)%10)*3))
+    PutGpio(I2C_SDA_PIN, PULL_UP);
+    PutGpio(I2C_SCL_PIN, PULL_UP);
 
-    INP_GPIO(I2C_SDA_PIN);
-    SET_GPIO_ALT(I2C_SDA_PIN, 0);
-    INP_GPIO(I2C_SCL_PIN);
-    SET_GPIO_ALT(I2C_SCL_PIN, 0);
+    I2C_Mutex = xSemaphoreCreateMutex();
 
-    return 0;
+	return I2C_Mutex != NULL;
 }
 
 void I2C_Status() {
@@ -121,21 +130,23 @@ void I2C_Status() {
 	uart_unlock();
 }
 
-void I2C_interrupt_handler(unsigned int irq, void *pParam) {
-	I2C_t* i2c = (I2C_t*) pParam;
+void I2C_interrupt_handler(unsigned int irq, void * pParam) {
+	UNUSED(pParam);
+	// I2C_t* i2c = (I2C_t*) pParam;
 
 	if (irq == BCM2835_IRQ_ID_I2C) {
-
+		i2c_lock();
+		i2c_unlock();
 	}
 }
 
 static int I2C_WaitUntilDone() {
-	// Wait till done, let's use a timeout just in case
+	// Wait till done, use a timeout just in case
 	int timeout = 50;
 
 	while (!mmio_read_bit(I2C_STATUS, I2C_STATUS_DONE) && --timeout > 0) {
-		//uartPutS_safe("I2C_WaitUntilDone: Not done and within time..." NEWLINE);
-		vTaskDelay(50);
+		//uartPutS_safe("I2C_WaitUntilDone: Not done yet..." NEWLINE);
+		vTaskDelay(2);
 	}
 
 	if (timeout == 0) {
@@ -152,146 +163,102 @@ static int I2C_WaitUntilDone() {
 	return 0;
 }
 
-#if 1
-static volatile uint32_t *i2c_reg = (uint32_t *)I2C_BASE;
-
-#define BSC0_C        	*(i2c_reg + 0x00)
-#define BSC0_S        	*(i2c_reg + 0x01)
-#define BSC0_DLEN    	*(i2c_reg + 0x02)
-#define BSC0_A        	*(i2c_reg + 0x03)
-#define BSC0_FIFO    	*(i2c_reg + 0x04)
-
-#define BSC_C_I2CEN    	(1 << 15)
-#define BSC_C_INTR    	(1 << 10)
-#define BSC_C_INTT    	(1 << 9)
-#define BSC_C_INTD    	(1 << 8)
-#define BSC_C_ST    	(1 << 7)
-#define BSC_C_CLEAR    	(1 << 4)
-#define BSC_C_READ    	1
-
-#define BSC_S_CLKT	(1 << 9)
-#define BSC_S_ERR    	(1 << 8)
-#define BSC_S_RXF    	(1 << 7)
-#define BSC_S_TXE    	(1 << 6)
-#define BSC_S_RXD    	(1 << 5)
-#define BSC_S_TXD    	(1 << 4)
-#define BSC_S_RXR    	(1 << 3)
-#define BSC_S_TXW    	(1 << 2)
-#define BSC_S_DONE   	(1 << 1)
-#define BSC_S_TA    	1
-
-void wait_i2c_done() {
-	//Wait till done, let's use a timeout just in case
-	int timeout = 50;
-	while ((!((BSC0_S) & BSC_S_DONE)) && --timeout) {
-		vTaskDelay(1);
-	}
-	if (timeout == 0) {
-		uart_lock();
-		uartCmd(CONSOLE_FG_RED);
-		uartPutS("ERR I2C timeout?" NEWLINE);
-		uartCmd(CONSOLE_RESET);
-		uart_unlock();
-	}
-}
-
-#endif
-
-
 int I2C_master_transmit(I2C_t* i2c, uint8_t addr, uint8_t *pData, uint16_t size) {
+	UNUSED(i2c);
 
-    BSC0_A = addr;
+	i2c_lock();
+	mmio_write(I2C_STATUS, CLEAR_STATUS);
+//	mmio_write(I2C_CONTROL, I2C_CTRL_CLEAR);
+	mmio_write(I2C_SLAVE_ADDR, addr);
+	mmio_write(I2C_DLEN, size);
 
-    BSC0_DLEN = size;
+	#if 0 // print
+		uart_lock();
+		uartPutS("Write: ");
+		for (uint16_t i = 0; i < size; i++) {
+			mmio_write(I2C_FIFO, pData[i]);
+			uartPutI(pData[i]);
+			uartPutC(',');
+		}
+		uartPutS(NEWLINE);
+		uart_unlock();
+	#else
+		for (uint16_t i = 0; i < size; i++) {
+			mmio_write(I2C_FIFO, pData[i]);
+		}
+	#endif
 
-//    BSC0_FIFO = (uint8_t)0; // reg 0?
+//	uartPutS_safe("I2C start write" NEWLINE);
 
-    uart_lock();
-    uartPutS("Write: ");
-	for (uint16_t i = 0; i < size; i++) {
-		BSC0_FIFO = pData[i];
-		uartPutI(pData[i]);
-		uartPutC(',');
-	}
-	uartPutS(NEWLINE);
-	uart_unlock();
+	mmio_write(I2C_STATUS, CLEAR_STATUS);
+//	mmio_write_not(I2C_CONTROL, I2C_CTRL_READ);  //?
+	mmio_write(I2C_CONTROL, START_WRITE);
 
-//    uartPutS_safe("I2C start write" NEWLINE);
+	const int timeout = I2C_WaitUntilDone();
 
-    BSC0_S = CLEAR_STATUS; 	// Reset status bits (see #define)
-    BSC0_C = START_WRITE;    	// Start Write (see #define)
-
-    wait_i2c_done();
-
-//    uartPutS_safe("I2C write done" NEWLINE);
-
-	return 0;
-
-//	mmio_write_or(I2C_STATUS, CLEAR_STATUS);
-//	mmio_write_or(I2C_CONTROL, I2C_CTRL_CLEAR);
-//
-//	mmio_write(I2C_SLAVE_ADDR, addr);
-//	mmio_write(I2C_DLEN, size); // Before or after FIFO write?
-//
-//	for (uint16_t i = 0; i < size; i++) {
-//		mmio_write(I2C_FIFO, pData[i]);
-//	}
-//
-//	mmio_write(I2C_STATUS, CLEAR_STATUS);
-//	mmio_write_not(I2C_CONTROL, I2C_CTRL_READ);
-//	mmio_write(I2C_CONTROL, START_WRITE);
-//
-//	return I2C_WaitUntilDone();
+	i2c_unlock();
+	return timeout;
 }
 
 int I2C_master_receive(I2C_t* i2c, uint8_t addr, uint8_t *pData, uint16_t size) {
+	UNUSED(i2c);
 
-    BSC0_DLEN = size;
+	i2c_lock();
 
-//    uartPutS_safe("I2C start read" NEWLINE);
+	#if 1  // Sequential or smaller blocks?
+		mmio_write(I2C_SLAVE_ADDR, addr);
+		mmio_write(I2C_DLEN, size);
 
-    BSC0_S = CLEAR_STATUS;	// Reset status bits (see #define)
-    BSC0_C = START_READ;    	// Start Read after clearing FIFO (see #define)
+//		uartPutS_safe("I2C start read" NEWLINE);
 
-    wait_i2c_done();
+		mmio_write(I2C_STATUS, CLEAR_STATUS);
+	//	mmio_write(I2C_CONTROL, I2C_CTRL_CLEAR);  // ?
+		mmio_write(I2C_CONTROL, START_READ);
 
-    uart_lock();
-    uartPutS("Read: ");
-	for (uint16_t i = 0; i < size; i++) {
-		pData[i] = BSC0_FIFO & 0xFF;
-		uartPutI(pData[i]);
-		uartPutC(',');
-	}
-	uartPutS(NEWLINE);
-	uart_unlock();
+		if (I2C_WaitUntilDone()) return 1;  // timeout
+
+		#if 0 // print
+			uart_lock();
+			uartPutS("Read: ");
+			for (uint16_t i = 0; i < size; i++) {
+				pData[i] = mmio_read_bit(I2C_FIFO, 0xFF);
+				uartPutI(pData[i]);
+				uartPutC(',');
+			}
+			uartPutS(NEWLINE);
+			uart_unlock();
+		#else
+			for (uint16_t i = 0; i < size; i++) {
+				pData[i] = mmio_read_bit(I2C_FIFO, 0xFF);
+			}
+		#endif
+	#else
+		#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+
+		mmio_write(I2C_SLAVE_ADDR, addr);
+
+		while (size > 0) {
+			// Read data per block of 8 bytes
+			const int block_len = MIN(size, 8);
+
+			mmio_write(I2C_STATUS, CLEAR_STATUS);
+			mmio_write(I2C_CONTROL, I2C_CTRL_CLEAR);
+			mmio_write(I2C_DLEN, block_len);
+			mmio_write(I2C_CONTROL, START_READ);
+
+			if (I2C_WaitUntilDone()) return 1;  // timeout
+
+			for (uint16_t i = 0; i < block_len; i++, pData++) {
+				*(pData + i) = mmio_read_bit(I2C_FIFO, 0xFF);
+			}
+
+			size -= block_len;
+			vTaskDelay(1);
+		}
+	#endif
 
 //    uartPutS_safe("I2C read done" NEWLINE);
 
+	i2c_unlock();
 	return 0;
-
-
-//	#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
-//
-//	mmio_write(I2C_SLAVE_ADDR, addr);
-//
-//	while (size > 0) {
-//		// Read data per block of 8 bytes
-//		const int block_len = MIN(size, 8);
-//
-//		mmio_write_or(I2C_STATUS, CLEAR_STATUS);
-//		mmio_write_or(I2C_CONTROL, I2C_CTRL_CLEAR);
-//		mmio_write(I2C_DLEN, block_len);
-//		mmio_write(I2C_CONTROL, START_READ);
-//
-//		if (I2C_WaitUntilDone()) return 1;  // timeout
-//
-//		for (uint16_t i = 0; i < block_len; i++, pData++) {
-//			*(pData + i) = mmio_read(I2C_FIFO) & 0xFF;
-//		}
-//
-//		size -= block_len;
-//		vTaskDelay(1);
-//	}
-//
-//	return 0;
 }
