@@ -49,7 +49,10 @@
 *.img
 *.list
 *.syms
+.cproject
+.project
 .tmp_versions/
+.settings/
 modules.order
 Module.symvers
 Mkfile.old
@@ -57,4 +60,8 @@ dkms.conf
 /Debug/
 /Release/
 /build/
+
+!/Deploy on RPi/kernel.img
+!/Deploy on RPi/start.elf
+!/Deploy on RPi/bootcode.bin
 
